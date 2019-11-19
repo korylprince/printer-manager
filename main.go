@@ -33,7 +33,7 @@ func main() {
 		GroupFilter:   config.GroupFilter,
 	}
 
-	manager, err := sync.NewManager(c, db, time.Minute*config.SyncInterval)
+	manager, err := sync.NewManager(c, db, time.Minute*time.Duration(config.SyncInterval))
 	if err != nil {
 		log.Fatalln("Unable to start manager:", err)
 	}
@@ -47,7 +47,7 @@ func main() {
 	}
 	auth := ad.New(adConfig, nil, []string{config.LDAPGroup})
 
-	s := httpapi.NewServer(db, manager, auth, memory.New(time.Minute*config.SessionExpiration), os.Stdout)
+	s := httpapi.NewServer(db, manager, auth, memory.New(time.Minute*time.Duration(config.SessionExpiration)), os.Stdout)
 
 	log.Println("Listening on:", config.ListenAddr)
 	log.Println(http.ListenAndServe(config.ListenAddr, http.StripPrefix(config.Prefix, s.Router())))
