@@ -34,3 +34,36 @@ CREATE TABLE location_group_assignment (
     FOREIGN KEY (location_id) REFERENCES location(id),
     FOREIGN KEY ("group_id") REFERENCES "group"(id) ON DELETE CASCADE
 );
+
+CREATE VIEW user_printers AS
+    SELECT
+        assigned.user_id,
+        printer_flattened.*
+    FROM printer_flattened INNER JOIN ((
+        SELECT
+            "user".id AS user_id,
+            printer.id AS printer_id
+        FROM "user"
+        INNER JOIN location_user_assignment ON
+            "user".id = location_user_assignment.user_id
+        INNER JOIN location ON
+            location_user_assignment.location_id = location.id
+        INNER JOIN printer ON
+            location.id = printer.location_id
+    ) UNION (
+        SELECT
+            "user".id AS user_id,
+            printer.id AS printer_id
+        FROM "user"
+        INNER JOIN group_user_assignment ON
+            "user".id = group_user_assignment.user_id
+        INNER JOIN "group" ON
+            group_user_assignment."group_id" = "group".id
+        INNER JOIN location_group_assignment ON
+            "group".id = location_group_assignment."group_id"
+        INNER JOIN location ON
+            location_group_assignment.location_id = location.id
+        INNER JOIN printer ON
+            location.id = printer.location_id
+    )) AS assigned ON
+        printer_flattened.id = assigned.printer_id;

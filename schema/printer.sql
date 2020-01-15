@@ -22,3 +22,20 @@ CREATE TABLE printer (
     FOREIGN KEY (model_id) REFERENCES model(id),
     FOREIGN KEY (location_id) REFERENCES location(id)
 );
+
+CREATE VIEW printer_flattened AS
+    SELECT
+        printer.id AS id,
+        printer.hostname AS hostname,
+        format('%s %s %s', location.name, manufacturer.name, model.name) AS name,
+        format('%s - %s', building.name, location.name) AS location,
+        COALESCE(jsonb_merge(model.driver, printer.driver_extra), '{}'::jsonb) AS driver
+    FROM printer
+    INNER JOIN model ON
+        printer.model_id = model.id
+    INNER JOIN manufacturer ON
+        model.manufacturer_id = manufacturer.id
+    INNER JOIN location ON
+        printer.location_id = location.id
+    INNER JOIN building ON
+        location.building_id = building.id;
