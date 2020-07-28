@@ -10,12 +10,11 @@ import (
 	"github.com/korylprince/httputil/session"
 )
 
-//AuthHookFunc is used to further check authorization of a Session
-type AuthHookFunc func(session.Session) (bool, error)
+//AuthHookFunc is used to further check authorization of a Session and return extra attributes
+type AuthHookFunc func(session.Session) (status bool, attrs interface{}, err error)
 
 //withAuth returns a ReturnHandlerFunc that checks the Session of the given request.
-//A hook function may be specified to further check authorization of the returned Session.
-func withAuth(store session.Store, hook AuthHookFunc, next ReturnHandlerFunc) ReturnHandlerFunc {
+func withAuth(store session.Store, next ReturnHandlerFunc) ReturnHandlerFunc {
 	return func(r *http.Request) (int, interface{}) {
 		header := strings.Split(r.Header.Get("Authorization"), " ")
 
@@ -33,17 +32,6 @@ func withAuth(store session.Store, hook AuthHookFunc, next ReturnHandlerFunc) Re
 		}
 
 		(r.Context().Value(contextKeyLogData)).(*logData).User = session.Username()
-
-		if hook != nil {
-			status, err := hook(session)
-			if err != nil {
-				return http.StatusInternalServerError, fmt.Errorf("Error when running authentication hook: %v", err)
-			}
-
-			if !status {
-				return http.StatusUnauthorized, nil
-			}
-		}
 
 		ctx := context.WithValue(r.Context(), contextKeySession, session)
 
@@ -64,9 +52,10 @@ func (router *APIRouter) authenticate(r *http.Request) (int, interface{}) {
 	}
 
 	type response struct {
-		Username    string `json:"username"`
-		DisplayName string `json:"display_name"`
-		SessionID   string `json:"session_id"`
+		Username    string      `json:"username"`
+		DisplayName string      `json:"display_name"`
+		SessionID   string      `json:"session_id"`
+		Attrs       interface{} `json:"attrs"`
 	}
 
 	req := new(request)
@@ -84,14 +73,29 @@ func (router *APIRouter) authenticate(r *http.Request) (int, interface{}) {
 		return http.StatusUnauthorized, errors.New("Invalid username or password")
 	}
 
+	resp := &response{
+		Username:    session.Username(),
+		DisplayName: session.DisplayName(),
+	}
+
+	if router.hook != nil {
+		status, attrs, err := router.hook(session)
+		if err != nil {
+			return http.StatusInternalServerError, fmt.Errorf("Error when running authentication hook: %v", err)
+		}
+
+		if !status {
+			return http.StatusUnauthorized, nil
+		}
+		resp.Attrs = attrs
+	}
+
 	id, err := router.sessionStore.Create(session)
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("Unable to create session: %v", err)
 	}
 
-	return http.StatusOK, &response{
-		Username:    session.Username(),
-		DisplayName: session.DisplayName(),
-		SessionID:   id,
-	}
+	resp.SessionID = id
+
+	return http.StatusOK, resp
 }

@@ -11,8 +11,8 @@ import (
 	"github.com/gofrs/uuid"
 	auth "github.com/korylprince/go-ad-auth/v3"
 	"github.com/korylprince/printer-manager/db"
-	"github.com/volatiletech/sqlboiler/boil"
-	"github.com/volatiletech/sqlboiler/queries/qm"
+	"github.com/volatiletech/sqlboiler/v4/boil"
+	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 )
 
 type user struct {

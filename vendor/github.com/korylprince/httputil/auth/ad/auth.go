@@ -12,6 +12,7 @@ import (
 type User struct {
 	username string
 	Entry    *ldap.Entry
+	Groups   []string
 }
 
 //Username returns the User's username
@@ -54,12 +55,13 @@ func (a *Auth) Authenticate(username, password string) (user session.Session, er
 		return nil, nil
 	}
 
-	if len(groups) == 0 {
+	if len(a.groups) > 0 && len(groups) == 0 {
 		return nil, nil
 	}
 
 	return &User{
 		username: username,
 		Entry:    entry,
+		Groups:   groups,
 	}, nil
 }

@@ -31,7 +31,7 @@ func (r *APIRouter) Handle(method, path string, handler ReturnHandlerFunc, auth 
 	action := runtime.FuncForPC(reflect.ValueOf(handler).Pointer()).Name()
 
 	if auth {
-		handler = withAuth(r.sessionStore, r.hook, handler)
+		handler = withAuth(r.sessionStore, handler)
 	}
 
 	r.mux.Methods(method).Path(path).Handler(
@@ -46,7 +46,7 @@ func (r *APIRouter) HandleTX(method, path string, db *sql.DB, handler TXReturnHa
 
 	rHandler := WithTX(db, handler)
 	if auth {
-		rHandler = withAuth(r.sessionStore, r.hook, rHandler)
+		rHandler = withAuth(r.sessionStore, rHandler)
 	}
 
 	r.mux.Methods(method).Path(path).Handler(
