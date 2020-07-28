@@ -83,6 +83,7 @@ function start_docker() {
 
     docker run -d --name $DOCKER_DB \
         --network $DOCKER_NETWORK -p 5432:5432 \
+        -e "POSTGRES_HOST_AUTH_METHOD=trust" \
         $POSTGRES_VERSION
 
     docker run -d --name $DOCKER_DBUI \
