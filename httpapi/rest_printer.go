@@ -2,12 +2,14 @@ package httpapi
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
+	"github.com/gorilla/mux"
 	"github.com/korylprince/printer-manager/db"
-	"github.com/korylprince/printer-manager/db/crud"
 	"github.com/volatiletech/sqlboiler/queries/qm"
 )
 
@@ -43,13 +45,20 @@ func newPrinter(p *db.Printer) *Printer {
 }
 
 func readUserPrinters(r *http.Request, tx *sql.Tx) (int, interface{}) {
-	code, v := crud.ReadUser(r, tx)
-	if err, ok := v.(error); ok {
-		return code, err
+	username, ok := mux.Vars(r)["username"]
+	if !ok || username == "" {
+		return http.StatusBadRequest, errors.New("Request missing username")
 	}
-	user := v.(*db.User)
+	user, err := db.Users(qm.Where("username = ?", username)).One(r.Context(), tx)
+	if err != nil {
+		if strings.Contains(err.Error(), "no rows in result set") {
+			return http.StatusNotFound, fmt.Errorf("User %s does not exist", username)
+		}
 
-	var printers []*Printer
+		return http.StatusInternalServerError, fmt.Errorf("Unable to find User %s: %v", username, err)
+	}
+
+	printers := make([]*Printer, 0)
 	seen := make(map[string]struct{})
 
 	locations, err := user.Locations(qm.Load("Printers.Model.Manufacturer"), qm.Load("Building")).All(r.Context(), tx)

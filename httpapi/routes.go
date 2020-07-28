@@ -181,8 +181,8 @@ func (s *Server) Router() http.Handler {
 		uuidRegexp, uuidRegexp, uuidRegexp),
 		s.db, crud.UnrelateLocationGroup, true)
 
-	apirouter.HandleTX("GET", fmt.Sprintf("/users/{id:%s}/printers", uuidRegexp),
-		s.db, readUserPrinters, true)
+	apirouter.HandleTX("GET", "/users/{username}/printers",
+		s.db, readUserPrinters, false)
 
 	return r
 }
