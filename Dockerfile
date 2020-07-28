@@ -1,4 +1,4 @@
-FROM golang:1.13-alpine as builder
+FROM golang:1.14-alpine as builder
 
 ARG VERSION
 
@@ -13,7 +13,7 @@ RUN cd /go/src/github.com/korylprince/printer-manager && \
     go install -mod=vendor github.com/korylprince/printer-manager
 
 
-FROM alpine:3.10
+FROM alpine:3.12
 
 RUN apk add --no-cache ca-certificates
 
