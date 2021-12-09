@@ -5,8 +5,10 @@ package driver
 
 import (
 	"database/sql"
+	"embed"
 	"encoding/base64"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -18,9 +20,12 @@ import (
 
 	// Side-effect import sql driver
 	_ "github.com/lib/pq"
+
+	_ "embed"
 )
 
-//go:generate go-bindata -nometadata -pkg driver -prefix override override/...
+//go:embed override
+var templates embed.FS
 
 func init() {
 	drivers.RegisterFromInit("psql", &PostgresDriver{})
@@ -38,20 +43,29 @@ func Assemble(config drivers.Config) (dbinfo *drivers.DBInfo, err error) {
 type PostgresDriver struct {
 	connStr string
 	conn    *sql.DB
+	version int
 }
 
 // Templates that should be added/overridden
 func (p PostgresDriver) Templates() (map[string]string, error) {
-	names := AssetNames()
 	tpls := make(map[string]string)
-	for _, n := range names {
-		b, err := Asset(n)
+	fs.WalkDir(templates, "override", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		tpls[n] = base64.StdEncoding.EncodeToString(b)
-	}
+		if d.IsDir() {
+			return nil
+		}
+
+		b, err := fs.ReadFile(templates, path)
+		if err != nil {
+			return err
+		}
+		tpls[strings.Replace(path, "override/", "", 1)] = base64.StdEncoding.EncodeToString(b)
+
+		return nil
+	})
 
 	return tpls, nil
 }
@@ -89,6 +103,11 @@ func (p *PostgresDriver) Assemble(config drivers.Config) (dbinfo *drivers.DBInfo
 			err = e
 		}
 	}()
+
+	p.version, err = p.getVersion()
+	if err != nil {
+		return nil, errors.Wrap(err, "sqlboiler-psql failed to get database version")
+	}
 
 	dbinfo = &drivers.DBInfo{
 		Schema: schema,
@@ -207,6 +226,8 @@ func (p *PostgresDriver) Columns(schema, tableName string, whitelist, blacklist 
 		c.domain_name,
 		c.column_default,
 
+		COALESCE(col_description(('"'||c.table_schema||'"."'||c.table_name||'"')::regclass::oid, ordinal_position), '') as column_comment,
+
 		c.is_nullable = 'YES' as is_nullable,
 		(case
 			when (select
@@ -252,7 +273,8 @@ func (p *PostgresDriver) Columns(schema, tableName string, whitelist, blacklist 
 						(
 							select typelem
 							from pg_type
-							where pg_type.typtype = 'b' and pg_type.typname = ('_' || c.udt_name)
+							inner join pg_namespace ON pg_type.typnamespace = pg_namespace.oid
+							where pg_type.typtype = 'b' and pg_type.typname = ('_' || c.udt_name) and pg_namespace.nspname=$1
 							limit 1
 						)
 						order by pg_enum.enumsortorder
@@ -292,10 +314,10 @@ func (p *PostgresDriver) Columns(schema, tableName string, whitelist, blacklist 
 	defer rows.Close()
 
 	for rows.Next() {
-		var colName, colType, colFullType, udtName string
+		var colName, colType, colFullType, udtName, comment string
 		var defaultValue, arrayType, domainName *string
 		var nullable, identity, unique bool
-		if err := rows.Scan(&colName, &colType, &colFullType, &udtName, &arrayType, &domainName, &defaultValue, &nullable, &identity, &unique); err != nil {
+		if err := rows.Scan(&colName, &colType, &colFullType, &udtName, &arrayType, &domainName, &defaultValue, &comment, &nullable, &identity, &unique); err != nil {
 			return nil, errors.Wrapf(err, "unable to scan for table %s", tableName)
 		}
 
@@ -306,6 +328,7 @@ func (p *PostgresDriver) Columns(schema, tableName string, whitelist, blacklist 
 			ArrType:    arrayType,
 			DomainName: domainName,
 			UDTName:    udtName,
+			Comment:    comment,
 			Nullable:   nullable,
 			Unique:     unique,
 		}
@@ -378,7 +401,12 @@ func (p *PostgresDriver) PrimaryKeyInfo(schema, tableName string) (*drivers.Prim
 func (p *PostgresDriver) ForeignKeyInfo(schema, tableName string) ([]drivers.ForeignKey, error) {
 	var fkeys []drivers.ForeignKey
 
-	query := `
+	whereConditions := []string{"pgn.nspname = $2", "pgc.relname = $1", "pgcon.contype = 'f'"}
+	if p.version >= 120000 {
+		whereConditions = append(whereConditions, "pgasrc.attgenerated = ''", "pgadst.attgenerated = ''")
+	}
+
+	query := fmt.Sprintf(`
 	select
 		pgcon.conname,
 		pgc.relname as source_table,
@@ -391,8 +419,10 @@ func (p *PostgresDriver) ForeignKeyInfo(schema, tableName string) ([]drivers.For
 		inner join pg_class dstlookupname on pgcon.confrelid = dstlookupname.oid
 		inner join pg_attribute pgasrc on pgc.oid = pgasrc.attrelid and pgasrc.attnum = ANY(pgcon.conkey)
 		inner join pg_attribute pgadst on pgcon.confrelid = pgadst.attrelid and pgadst.attnum = ANY(pgcon.confkey)
-	where pgn.nspname = $2 and pgc.relname = $1 and pgcon.contype = 'f'
-	order by pgcon.conname, source_table, source_column, dest_table, dest_column`
+	where %s
+	order by pgcon.conname, source_table, source_column, dest_table, dest_column`,
+		strings.Join(whereConditions, " and "),
+	)
 
 	var rows *sql.Rows
 	var err error
@@ -776,4 +806,19 @@ func (p PostgresDriver) Imports() (importers.Collection, error) {
 	}
 
 	return col, nil
+}
+
+// getVersion gets the version of underlying database
+func (p *PostgresDriver) getVersion() (int, error) {
+	type versionInfoType struct {
+		ServerVersionNum int `json:"server_version_num"`
+	}
+	versionInfo := &versionInfoType{}
+
+	row := p.conn.QueryRow("SHOW server_version_num")
+	if err := row.Scan(&versionInfo.ServerVersionNum); err != nil {
+		return 0, err
+	}
+
+	return versionInfo.ServerVersionNum, nil
 }

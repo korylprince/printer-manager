@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -14,6 +15,8 @@ var (
 	// decimals. It should be set once before any sqlboiler and then
 	// assumed to be read-only after sqlboiler's first use.
 	DecimalContext decimal.Context
+
+	nullBytes = []byte("null")
 )
 
 var (
@@ -36,7 +39,7 @@ type Decimal struct {
 }
 
 // NullDecimal is the same as Decimal, but allows the Big pointer to be nil.
-// See docmentation for Decimal for more details.
+// See documentation for Decimal for more details.
 //
 // When going into a database, if Big is nil it's value will be "null".
 type NullDecimal struct {
@@ -101,11 +104,43 @@ func (n *NullDecimal) Scan(val interface{}) error {
 
 // UnmarshalJSON allows marshalling JSON into a null pointer
 func (n *NullDecimal) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(data, nullBytes) {
+		if n != nil {
+			n.Big = nil
+		}
+		return nil
+	}
+
 	if n.Big == nil {
 		n.Big = decimal.WithContext(DecimalContext)
 	}
 
 	return n.Big.UnmarshalJSON(data)
+}
+
+// String impl
+func (n NullDecimal) String() string {
+	if n.Big == nil {
+		return "nil"
+	}
+	return n.Big.String()
+}
+
+func (n NullDecimal) Format(f fmt.State, verb rune) {
+	if n.Big == nil {
+		fmt.Fprint(f, "nil")
+		return
+	}
+	n.Big.Format(f, verb)
+}
+
+// MarshalJSON marshals a decimal value
+func (n NullDecimal) MarshalJSON() ([]byte, error) {
+	if n.Big == nil {
+		return nullBytes, nil
+	}
+
+	return n.Big.MarshalText()
 }
 
 // IsZero implements qmhelper.Nullable
