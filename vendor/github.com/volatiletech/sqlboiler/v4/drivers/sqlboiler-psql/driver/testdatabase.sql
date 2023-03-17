@@ -5,6 +5,9 @@ drop table if exists videos;
 drop table if exists sponsors;
 drop table if exists users;
 drop table if exists type_monsters;
+drop view if exists user_videos;
+drop view if exists type_monsters_v;
+drop materialized view if exists type_monsters_mv;
 
 drop type if exists workday;
 create type workday as enum('monday', 'tuesday', 'wednesday', 'thursday', 'friday');
@@ -57,7 +60,8 @@ create domain my_int_array as int[];
 create table type_monsters (
 	id serial primary key not null,
 
-	enum_use    workday not null,
+	enum_use        workday not null,
+	enum_nullable   workday,
 
 	bool_zero   bool,
 	bool_one    bool null,
@@ -241,5 +245,18 @@ create table type_monsters (
 	customarr_null   my_int_array null,
 	customarr_nnull  my_int_array not null,
 
-	domainuint3_nnull uint3 not null
+    domainuint3_nnull uint3 not null,
+
+    base text null,
+
+    generated_nnull text NOT NULL GENERATED ALWAYS AS (UPPER(base)) STORED,
+    generated_null text NULL GENERATED ALWAYS AS (UPPER(base)) STORED
 );
+
+create view user_videos as 
+select u.id user_id, v.id video_id, v.sponsor_id sponsor_id
+from users u
+inner join videos v on v.user_id = u.id;
+
+create view type_monsters_v as select * from type_monsters; 
+create materialized view type_monsters_mv as select * from type_monsters_v;
