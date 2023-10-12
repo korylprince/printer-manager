@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func (s *Server) syncStats(r *http.Request) (int, interface{}) {
+func (s *Server) syncStats(_ *http.Request) (int, interface{}) {
 	type response struct {
 		LastRun time.Time `json:"last_run"`
 		NextRun time.Time `json:"next_run"`
@@ -16,7 +16,7 @@ func (s *Server) syncStats(r *http.Request) (int, interface{}) {
 	return http.StatusOK, &response{LastRun: l, NextRun: n}
 }
 
-func (s *Server) syncTrigger(r *http.Request) (int, interface{}) {
+func (s *Server) syncTrigger(_ *http.Request) (int, interface{}) {
 	s.manager.Trigger()
 
 	return http.StatusOK, nil
