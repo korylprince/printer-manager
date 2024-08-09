@@ -27,6 +27,8 @@ type Config struct {
 
 	SQLDSN string `required:"true"`
 
+	PrinterHostnameRegexp string
+
 	ListenAddr string `required:"true" default:":80"` //addr format used for net.Dial; required
 	Prefix     string //url prefix to mount api to without trailing slash
 }

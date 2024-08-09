@@ -5,20 +5,33 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"time"
 
 	adauth "github.com/korylprince/go-ad-auth/v3"
 	"github.com/korylprince/httputil/auth/ad"
 	"github.com/korylprince/httputil/session/memory"
+	dblib "github.com/korylprince/printer-manager/db"
 	"github.com/korylprince/printer-manager/httpapi"
 	"github.com/korylprince/printer-manager/sync"
 	_ "github.com/lib/pq"
+	"github.com/volatiletech/sqlboiler/v4/boil"
 )
 
 func main() {
 	db, err := sql.Open("postgres", config.SQLDSN)
 	if err != nil {
 		log.Fatalln("Unable to open database:", err)
+	}
+
+	if config.PrinterHostnameRegexp != "" {
+		r, err := regexp.Compile(config.PrinterHostnameRegexp)
+		if err != nil {
+			log.Fatalln("Unable to parse PRINTERMANAGER_PRINTERHOSTNAMEREGEXP as regular expression:", err)
+		}
+		dblib.AddPrinterHook(boil.BeforeInsertHook, ValidatePrinter(r))
+		dblib.AddPrinterHook(boil.BeforeUpdateHook, ValidatePrinter(r))
+		dblib.AddPrinterHook(boil.BeforeUpsertHook, ValidatePrinter(r))
 	}
 
 	c := &sync.Config{
